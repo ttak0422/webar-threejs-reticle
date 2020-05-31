@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<meta charset="utf-8" />
+<title>reticle</title>
+<script src="https://cdn.jsdelivr.net/npm/three@0.117.1/build/three.min.js"></script>
+</head>
+
+<body>
+<button id="xr-button" disabled>Tap To Start</button>
+<script>
+
+// three
+let renderer, camera, light, reticle, scene;
+
+// xr session
+let xrSession;
+let xrRefSpace;
+let xrViewerSpace;
+let xrHitTestSource;
+
+function setup() {
+    // renderer
+    renderer = new THREE.WebGLRenderer({
+        antialias: false,
+        alpha: true,
+    });
+    // camera
+    camera = new THREE.PerspectiveCamera(60, window.innerWidth, window.innerWidth, 0.1, 100);
+    // light
+    light = new THREE.DirectionalLight(0xffffff, 0.7);
+    light.position.set(1, 1, 1).normalize();
+    // reticle
+    const innerRadius = 0.04; // The size of 1.0 corresponds to 1m.
+    const outerRadiut = 0.05;
+    const thetaSegments = 30;
+    const phiSegments = 1;
+    const geometry = new THREE.RingGeometry(innerRadius, outerRadiut, thetaSegments, phiSegments);
+    const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    reticle = new THREE.Mesh(geometry, material);
+    reticle.rotation.set(Math.PI * -0.5, 0, 0);
+    reticle.visible = false;
+    // scene
+    scene = new THREE.Scene();
+    scene.add(light);
+    scene.add(reticle);
+}
+
+function update() {
+    xrSession.requestAnimationFrame((time, frame) => {
+        const pose = frame.getViewerPose(xrRefSpace);
+        reticle.visible = false;
+        if (xrHitTestSource && pose) {
+            const hitTestResults = frame.getHitTestResults(xrHitTestSource);
+            if (hitTestResults.length > 0) {
+                reticle.visible = true;
+                const pose = hitTestResults[0].getPose(xrRefSpace);
+                const position = pose.transform.position;
+                reticle.position.set(position.x, position.y, position.z);
+            }
+        }
+    });
+    renderer.render(scene, camera);
+}
+
+function onRequestSession() {
+    navigator.xr
+        .requestSession("immersive-ar", { requiredFeatures: ["local", "hit-test"] })
+        .then(onStartSession);
+}
+
+function onStartSession(session) {
+    // three
+    renderer.xr.enabled = true;
+    renderer.xr.setReferenceSpaceType("local");
+    renderer.xr.setSession(session);
+    // session
+    xrSession = session;
+    xrSession.requestReferenceSpace("viewer").then(refSpace => {
+        xrViewerSpace = refSpace;
+        xrSession.requestHitTestSource({ space: xrViewerSpace }).then((hitTestSource) => {
+            xrHitTestSource = hitTestSource;
+        });
+    });
+    xrSession.requestReferenceSpace("local").then(refSpace => {
+        xrRefSpace = refSpace;
+        renderer.setAnimationLoop(update);
+    });
+}
+
+window.onload = () => {
+    setup();
+    if ("xr" in navigator) {
+        const button = document.getElementById("xr-button");
+        navigator.xr.isSessionSupported("immersive-ar").then((supported) => {
+            if (supported) {
+                button.disabled = !supported;
+            } else {
+                alert("not supported");
+            }
+        });
+        button.addEventListener("click", onRequestSession);
+    } else {
+        alert("not supported!");
+    }
+}
+
+</script>
+</body>
+
+</html>
